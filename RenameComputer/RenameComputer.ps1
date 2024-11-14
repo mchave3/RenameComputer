@@ -24,13 +24,6 @@ $logFile = "$logPath\RenameComputer.log"
 $tagFile = "$logPath\RenameComputer.tag"
 if (-not (Test-Path $logPath)) { mkdir $logPath }
 
-function Write-Log {
-    param([string]$message)
-    $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    Write-Host "$timestamp $message"
-    Add-Content -Path $logFile -Value "$timestamp $message"
-}
-
 function Test-ADConnected {
     try {
         $dcInfo = [ADSI]"LDAP://RootDSE"
@@ -60,7 +53,7 @@ try {
     # Exit if prefix is set but doesn't match
     $details = Get-ComputerInfo
     if ($Prefix -and (-not $details.CsName.StartsWith($Prefix))) {
-        Write-Log "Prefix mismatch, exiting. Prefix=$Prefix ComputerName=$($details.CsName)"
+        Write-Error "Prefix mismatch, exiting. Prefix=$Prefix ComputerName=$($details.CsName)"
         Stop-Transcript
         Exit 0
     }
@@ -69,7 +62,7 @@ try {
     $isAD = $false
     $tenantID = $null
     if ($details.CsPartOfDomain) {
-        Write-Log "Device is joined to AD domain: $($details.CsDomain)"
+        Write-Host "Device is joined to AD domain: $($details.CsDomain)"
         $isAD = $true
         $goodToGo = $false
     } else {
@@ -83,9 +76,9 @@ try {
             }
         }
         if ($null -ne $tenantID) {
-            Write-Log "Device is joined to AAD tenant: $tenantID"
+            Write-Host "Device is joined to AAD tenant: $tenantID"
         } else {
-            Write-Log "Not part of a AAD or AD, in a workgroup."
+            Write-Host "Not part of a AAD or AD, in a workgroup."
         }
     }
 
@@ -96,7 +89,7 @@ try {
         $goodToGo = $true
     }
     if ($isAD -and -not $goodToGo) {
-        Write-Log "No connectivity to the AD domain, unable to rename."
+        Write-Host "No connectivity to the AD domain, unable to rename."
         Stop-Transcript
         Exit 1
     }
@@ -108,30 +101,30 @@ try {
 
     # Exit if name is already set
     if ($newName -ieq $details.CsName) {
-        Write-Log "No need to rename, current name is already set to $newName"
+        Write-Warning "No need to rename, current name is already set to $newName"
         Set-Content -Path $tagFile -Value "Installed"
         Stop-Transcript
         Exit 0
     }
 
     # Rename the computer
-    Write-Log "Renaming computer to $newName"
+    Write-Host "Renaming computer to $newName"
     Rename-Computer -NewName $newName -Force
 
     # Reboot during OOBE if necessary
     if ($details.CsUserName -match "defaultUser") {
-        Write-Log "In OOBE, exiting with return code 1641 for immediate reboot."
+        Write-Host "In OOBE, exiting with return code 1641 for immediate reboot."
         Set-Content -Path $tagFile -Value "Installed"
         Stop-Transcript
         Exit 1641
     } else {
         Set-Content -Path $tagFile -Value "Installed"
-        Write-Log "Initiating a restart in 10 minutes"
+        Write-Host "Initiating a restart in 10 minutes"
         & shutdown.exe /g /t 600 /f /c "Restarting due to computer name change. Save your work."
     }
 
 } catch {
-    Write-Log "Error: $($_.Exception.Message)"
+    Write-Error "Error: $($_.Exception.Message)"
     Stop-Transcript
     Exit 1
 }
